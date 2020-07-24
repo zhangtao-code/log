@@ -13,6 +13,7 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.RandomUtils;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.github.mybatis.spring.config.DataLog;
+import org.github.mybatis.spring.handle.IHandle;
 import org.github.mybatis.spring.log.CommonLog;
 import org.github.mybatis.spring.log.ModuleLog;
 import org.github.mybatis.spring.log.ItemLog;
@@ -24,18 +25,20 @@ import org.github.mybatis.spring.model.OperationTrunkLogModel;
 import org.github.mybatis.spring.util.OperationType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
-public class MyService implements IService {
+public class MyService implements IService, InitializingBean, IHandle<MyModel> {
     private static Logger logger = LoggerFactory.getLogger(MyService.class);
     @Autowired
     private MyMapper mapper;
@@ -43,6 +46,9 @@ public class MyService implements IService {
     private OperationLogMapper logMapper;
     @Autowired
     private SqlSessionFactory factory;
+    @Autowired
+    private List<IHandle> handles;
+    private Map<Class, IHandle> handleMap;
 
     @Override
     @DataLog(value = "model")
@@ -54,6 +60,12 @@ public class MyService implements IService {
         model.setId(RandomUtils.nextLong(100, 1000000000000000L));
         mapper.add(model);
         System.err.println(logMapper.getTransactionalId());
+    }
+
+    @Override
+    public Map<Long, String> handle(String name, Set<Long> set) {
+        List<MyModel> list = mapper.query(set);
+        return list.stream().collect(Collectors.toMap(MyModel::getId, MyModel::getName));
     }
 
     @Override
@@ -140,7 +152,11 @@ public class MyService implements IService {
                     continue;
                 }
                 Field field = getRelationField(clazz);
-                Map<Long, String> nameMap = null;//todo
+                Relation relation = field.getDeclaredAnnotation(Relation.class);
+                Set<Long> ids = new HashSet<>();
+                ids.addAll(dest.stream().map(o -> getRelationId(o, field)).collect(Collectors.toList()));
+                ids.addAll(src.stream().map(o -> getRelationId(o, field)).collect(Collectors.toList()));
+                Map<Long, String> nameMap = handleMap.get(clazz).handle(relation.value(), ids);
                 Map<Long, Object> oldMap2 = dest.stream().collect(Collectors.toMap(o -> getRelationId(o, field), Function.identity()));
                 Map<Long, Object> currentMap2 = src.stream().collect(Collectors.toMap(o -> getRelationId(o, field), Function.identity()));
                 Set<Long> remove = oldMap2.keySet();
@@ -193,10 +209,14 @@ public class MyService implements IService {
     private List<CommonLog> batchLogs(Class clazz, OperationBranchLogModel myModel, OperationType type) {
         Gson gson = new Gson();
         Field field = getRelationField(clazz);
+        Relation relation = field.getDeclaredAnnotation(Relation.class);
         List<Object> list = gson.fromJson(myModel.getContent(), getListType(clazz));
         Set<Long> ids = list.stream().map(o -> getRelationId(o, field)).filter(i -> i > 0).collect(Collectors.toSet());
-        List<IModel> models = null;//todo
-        List<CommonLog> logs = models.stream().map(model -> new CommonLog(model.showName(), type)).collect(Collectors.toList());
+        Map<Long, String> map = handleMap.get(clazz).handle(relation.value(), ids);
+        List<CommonLog> logs = map.values()
+                .stream()
+                .map(name -> new CommonLog(name, type))
+                .collect(Collectors.toList());
         return logs;
     }
 
@@ -234,8 +254,8 @@ public class MyService implements IService {
             if (exclude != null) {
                 continue;
             }
-            Object src = field.get(oldObject);
-            Object dest = field.get(currentObject);
+            Long src = (Long) field.get(oldObject);
+            Long dest = (Long) field.get(currentObject);
             boolean compare = Objects.equals(src, dest);
             if (compare) {
                 continue;
@@ -245,7 +265,13 @@ public class MyService implements IService {
             commonLog.setName(name.value());
             commonLog.setType(OperationType.UPDATE);
             if (relation != null) {
-                //todo
+                IHandle handle = handleMap.get(clazz);
+                Set<Long> id = new TreeSet<>();
+                id.add(src);
+                id.add(dest);
+                Map<Long, String> map = handle.handle(relation.value(), id);
+                commonLog.setSource(map.get(src));
+                commonLog.setDest(map.get(dest));
             } else {
                 commonLog.setSource(String.valueOf(src));
                 commonLog.setDest(String.valueOf(dest));
@@ -256,5 +282,20 @@ public class MyService implements IService {
             return null;
         }
         return list;
+    }
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        if (CollectionUtils.isEmpty(handles)) {
+            handleMap = Collections.EMPTY_MAP;
+            return;
+        }
+        handleMap = new HashMap<>();
+        for (IHandle handle : handles) {
+            Type type = handle.getClass().getGenericSuperclass();
+            ParameterizedType parameterizedType = (ParameterizedType) type;
+            type = parameterizedType.getActualTypeArguments()[0];
+            handleMap.put((Class) type, handle);
+        }
     }
 }

@@ -54,4 +54,14 @@
         where
         id=#{id}
     </select>
+
+    <select id="query" resultMap="allMap">
+        select <include refid="columnSql"/>
+        from <include refid="tableName"/>
+        where
+        id in
+        <foreach item="item" collection="set" open="(" separator="," close=")">
+            #{item}
+        </foreach>
+    </select>
 </mapper>
