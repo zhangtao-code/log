@@ -37,25 +37,22 @@
             (#{item.id},#{item.parentId},#{item.branch},#{item.content})
         </foreach>
     </insert>
-    <select id="getTransactionalId" resultType="Long">
-       SELECT TRX_ID FROM INFORMATION_SCHEMA.INNODB_TRX  WHERE TRX_MYSQL_THREAD_ID = CONNECTION_ID();
-    </select>
     <select id="getTrunk" resultMap="trunk">
         SELECT <include refid="trunkColumn"/>
-        from
+        FROM
         `operation_trunk_log`
-        where
+        WHERE
         `primary_id`=#{primaryId}
-        and
+        AND
         `trunk`=#{trunk}
-        order by operating_time desc;
+        ORDER BY operating_time DESC;
     </select>
     <select id="getBranch" resultMap="branch">
         SELECT <include refid="branchColumn"/>
-        from
+        FROM
         `operation_branch_log`
-        where
-        `parent_id` in
+        WHERE
+        `parent_id` IN
         <foreach collection="set" item="item" open="(" separator="," close=")">
             #{item}
         </foreach>

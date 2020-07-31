@@ -59,7 +59,7 @@ public class MyService implements IService, InitializingBean, IHandle<MyModel> {
         model.setExclude("exclude22");
         model.setId(RandomUtils.nextLong(100, 1000000000000000L));
         mapper.add(model);
-        System.err.println(logMapper.getTransactionalId());
+
     }
 
     @Override
@@ -71,16 +71,16 @@ public class MyService implements IService, InitializingBean, IHandle<MyModel> {
     @Override
     public List<ItemLog> getLog(String moduleName, long primaryId) {
         List<OperationTrunkLog> list = logMapper.getTrunk(moduleName, primaryId);
-        Set<Long> set = list.stream().map(OperationTrunkLog::getTagId).collect(Collectors.toSet());
+        Set<String> set = list.stream().map(OperationTrunkLog::getTagId).collect(Collectors.toSet());
         List<OperationBranchLog> branch = logMapper.getBranch(set);
-        Map<Long, Map<String, OperationBranchLog>> branchMap = branch
+        Map<String, Map<String, OperationBranchLog>> branchMap = branch
                 .stream()
                 .collect(Collectors.groupingBy(OperationBranchLog::getParentId, Collectors.toMap(OperationBranchLog::getBranch, Function.identity())));
         List<ItemLog> logs = new ArrayList<>();
         OperationTrunkLog item = null;
         Map<String, OperationBranchLog> map = null;
         for (OperationTrunkLog trunk : list) {
-            long tagId = trunk.getTagId();
+            String  tagId = trunk.getTagId();
             if (item != null) {
                 try {
                     ItemLog myLog = diff(item, branchMap.get(tagId), map);

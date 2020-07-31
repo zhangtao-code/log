@@ -15,5 +15,5 @@ public interface OperationLogMapper {
 
     List<OperationTrunkLog> getTrunk(String trunk, long primaryId);
 
-    List<OperationBranchLog> getBranch(@Param("set") Set<Long> set);
+    List<OperationBranchLog> getBranch(@Param("set") Set<String> set);
 }
