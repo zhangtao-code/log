@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import mybatis.log.IModel;
 import mybatis.log.LogCert;
+import mybatis.log.TraceLocal;
 import mybatis.log.anno.Log;
 import mybatis.log.common.JsonExclude;
 import org.apache.commons.collections4.CollectionUtils;
@@ -19,9 +20,7 @@ import org.apache.ibatis.session.RowBounds;
 import org.apache.ibatis.type.Alias;
 
 import java.lang.reflect.Method;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 
@@ -32,50 +31,39 @@ public abstract class DataLogInterceptor implements Interceptor {
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
         Object result = invocation.proceed();
+        String traceId = TraceLocal.get();
+        if (StringUtils.isEmpty(traceId)) {
+            return result;
+        }
+        //
         Object par = invocation.getArgs()[1];
         Object[] args = invocation.getArgs();
         MappedStatement ms = (MappedStatement) args[0];
-        String id = ms.getId();
-        LogCert filter = interceptorMap.get(id);
-        int index = id.lastIndexOf(".");
-        String mapperName = id.substring(0, index);
-        if (filter == null) {
-
-            String methodName = id.substring(index + 1);
-            Class clazz = Class.forName(mapperName);
-            Method method = null;
-            for (Method item : clazz.getMethods()) {
-                if (item.getName().equals(methodName)) {
-                    method = item;
-                }
-            }
-
-            if (method == null) {
-                interceptorMap.put(id, LogCert.DEFAULT);
-            }
-            Log logAnnotation = method.getDeclaredAnnotation(Log.class);
-            if (logAnnotation == null) {
-                interceptorMap.put(id, LogCert.DEFAULT);
-                return result;
-            }
-            String tag = getTag(par);
-            filter = new LogCert(logAnnotation, tag);
-            interceptorMap.put(id, filter);
-        } else if (!filter.isCert()) {
+        Executor executor = (Executor) invocation.getTarget();
+        String classMethodName = ms.getId();
+        //
+        int index = classMethodName.lastIndexOf(".");
+        String mapperName = classMethodName.substring(0, index);
+        LogCert logCert = getLogCert(classMethodName, index, mapperName, par);
+        if (logCert == null || (!logCert.isCert())) {
             return result;
         }
         Object log = par;
-        long primaryId = getId(par);
-        Executor executor = (Executor) invocation.getTarget();
-        if (!filter.isAuto()) {
+        Long primaryId = parseParameterId(par);
+        if (primaryId == null) {
+            return result;
+        }
+        if (!logCert.isAuto()) {
             MappedStatement query = ms.getConfiguration().getMappedStatement(mapperName + name);
             if (query == null) {
                 return result;
             }
-
             log = executor.query(query, primaryId, RowBounds.DEFAULT, null);
         }
-        insertLog(toJson(log), filter.getTag(), ms.getConfiguration(), executor, primaryId);
+        String json = parseLog(log, primaryId, logCert, mapperName, ms.getConfiguration(), executor);
+        if (StringUtils.isNotBlank(json)) {
+            insertLog(json, logCert.getBranchName(), ms.getConfiguration(), executor, primaryId, traceId);
+        }
         return result;
     }
 
@@ -89,24 +77,73 @@ public abstract class DataLogInterceptor implements Interceptor {
 
     }
 
-    protected long getId(Object object) {
+    protected String parseLog(Object log, long primaryId, LogCert filter, String mapperName, Configuration configuration, Executor executor) throws Exception {
+        if (!filter.isAuto()) {
+            MappedStatement query = configuration.getMappedStatement(mapperName + name);
+            if (query == null) {
+                return null;
+            }
+            log = executor.query(query, primaryId, RowBounds.DEFAULT, null);
+        }
+        return toJson(log);
+    }
+
+    protected LogCert getLogCert(String id, int index, String mapperName, Object par) throws Exception {
+        LogCert logCert = interceptorMap.get(id);
+        if (logCert != null) {
+            return logCert;
+        }
+        String methodName = id.substring(index + 1);
+        Class clazz = Class.forName(mapperName);
+        Method method = null;
+        for (Method item : clazz.getMethods()) {
+            if (item.getName().equals(methodName)) {
+                method = item;
+            }
+        }
+        if (method == null) {
+            interceptorMap.put(id, LogCert.DEFAULT);
+            return LogCert.DEFAULT;
+        }
+        Log logAnnotation = method.getDeclaredAnnotation(Log.class);
+        if (logAnnotation == null) {
+            interceptorMap.put(id, LogCert.DEFAULT);
+            return LogCert.DEFAULT;
+        }
+        String branchName = parseBranchName(par);
+        logCert = new LogCert(logAnnotation, branchName);
+        interceptorMap.put(id, logCert);
+        return logCert;
+    }
+
+    /**
+     * 解析出Id
+     *
+     * @param object
+     * @return
+     */
+    protected Long parseParameterId(Object object) {
         if (object instanceof List) {
-            return handleList((List) object);
+            return handleCollection((List) object);
         }
-        if( object instanceof Map){
-            
+        if (object instanceof Map) {
+            Map map = (Map) object;
+            return handleCollection(map.values());
         }
-        IModel model = (IModel) object;
-        return model.logId();
+        if (object instanceof IModel) {
+            IModel model = (IModel) object;
+            return model.logId();
+        }
+        return null;
     }
 
-    private long handleList(List list) {
-        Object object = list.get(0);
-        return getId(object);
+    private Long handleCollection(Collection collection) {
+        Optional<Long> optional = collection.stream().map(this::parseParameterId).filter(Objects::nonNull).findFirst();
+        return optional.get();
     }
 
 
-    protected abstract void insertLog(String data, String tag, Configuration configuration, Executor executor, long primary) throws Exception;
+    protected abstract void insertLog(String data, String tag, Configuration configuration, Executor executor, long primary, String parentId) throws Exception;
 
     protected String toJson(Object object) {
         if (object == null) {
@@ -122,19 +159,20 @@ public abstract class DataLogInterceptor implements Interceptor {
     }
 
 
-    protected String getTag(Object object) {
+    protected String parseBranchName(Object object) {
         if (object instanceof List) {
             List list = (List) object;
-            return getTag(list.get(0));
+            return parseBranchName(list.get(0));
         }
         if (object instanceof Map) {
             Map map = (Map) object;
             for (Object value : map.values()) {
-                String tag = getTag(value);
+                String tag = parseBranchName(value);
                 if (!StringUtils.isEmpty(tag)) {
                     return tag;
                 }
             }
+            return null;
         }
         Alias alias = object.getClass().getDeclaredAnnotation(Alias.class);
         if (alias == null) {

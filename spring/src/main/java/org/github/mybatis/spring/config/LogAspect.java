@@ -1,13 +1,15 @@
 package org.github.mybatis.spring.config;
 
+import mybatis.log.TraceLocal;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.Signature;
 import org.aspectj.lang.annotation.After;
 import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.annotation.Before;
 import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.github.mybatis.spring.mapper.OperationLogMapper;
-import org.github.mybatis.spring.model.OperationTrunkLogModel;
+import org.github.mybatis.spring.model.OperationTrunkLog;
 import org.github.mybatis.spring.util.PrimaryLocal;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -24,6 +26,11 @@ public class LogAspect {
     public void pointCut() {
     }
 
+    @Before("pointCut()")
+    public void before(JoinPoint joinPoint) {
+
+    }
+
     @After("pointCut()")
     public void insertTrunk(JoinPoint joinPoint) {
         Signature signature = joinPoint.getSignature();
@@ -33,13 +40,14 @@ public class LogAspect {
         int type = dataLog.type();
         String value = dataLog.value();
         String userId = "1234";
-        OperationTrunkLogModel trunk = new OperationTrunkLogModel();
+        OperationTrunkLog trunk = new OperationTrunkLog();
         trunk.setPrimaryId(PrimaryLocal.get());
         trunk.setOperationType(type);
         trunk.setOperatorId(userId);
         trunk.setTrunk(value);
-        trunk.setTagId(mapper.getTransactionalId());
+        trunk.setTagId(TraceLocal.get());
         mapper.addTrunk(trunk);
+        TraceLocal.remove();
         PrimaryLocal.remove();
     }
 

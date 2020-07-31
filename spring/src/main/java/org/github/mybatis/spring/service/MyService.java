@@ -20,8 +20,8 @@ import org.github.mybatis.spring.log.ItemLog;
 import org.github.mybatis.spring.mapper.MyMapper;
 import org.github.mybatis.spring.mapper.OperationLogMapper;
 import org.github.mybatis.spring.model.MyModel;
-import org.github.mybatis.spring.model.OperationBranchLogModel;
-import org.github.mybatis.spring.model.OperationTrunkLogModel;
+import org.github.mybatis.spring.model.OperationBranchLog;
+import org.github.mybatis.spring.model.OperationTrunkLog;
 import org.github.mybatis.spring.util.OperationType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,16 +70,16 @@ public class MyService implements IService, InitializingBean, IHandle<MyModel> {
 
     @Override
     public List<ItemLog> getLog(String moduleName, long primaryId) {
-        List<OperationTrunkLogModel> list = logMapper.getTrunk(moduleName, primaryId);
-        Set<Long> set = list.stream().map(OperationTrunkLogModel::getTagId).collect(Collectors.toSet());
-        List<OperationBranchLogModel> branch = logMapper.getBranch(set);
-        Map<Long, Map<String, OperationBranchLogModel>> branchMap = branch
+        List<OperationTrunkLog> list = logMapper.getTrunk(moduleName, primaryId);
+        Set<Long> set = list.stream().map(OperationTrunkLog::getTagId).collect(Collectors.toSet());
+        List<OperationBranchLog> branch = logMapper.getBranch(set);
+        Map<Long, Map<String, OperationBranchLog>> branchMap = branch
                 .stream()
-                .collect(Collectors.groupingBy(OperationBranchLogModel::getParentId, Collectors.toMap(OperationBranchLogModel::getBranch, Function.identity())));
+                .collect(Collectors.groupingBy(OperationBranchLog::getParentId, Collectors.toMap(OperationBranchLog::getBranch, Function.identity())));
         List<ItemLog> logs = new ArrayList<>();
-        OperationTrunkLogModel item = null;
-        Map<String, OperationBranchLogModel> map = null;
-        for (OperationTrunkLogModel trunk : list) {
+        OperationTrunkLog item = null;
+        Map<String, OperationBranchLog> map = null;
+        for (OperationTrunkLog trunk : list) {
             long tagId = trunk.getTagId();
             if (item != null) {
                 try {
@@ -97,7 +97,7 @@ public class MyService implements IService, InitializingBean, IHandle<MyModel> {
         return logs;
     }
 
-    protected ItemLog diff(OperationTrunkLogModel trunk, Map<String, OperationBranchLogModel> srcMap, Map<String, OperationBranchLogModel> destMap) throws Exception {
+    protected ItemLog diff(OperationTrunkLog trunk, Map<String, OperationBranchLog> srcMap, Map<String, OperationBranchLog> destMap) throws Exception {
         //初始化创建
         if (MapUtils.isEmpty(srcMap)) {
             //初始化创建,无日志
@@ -112,13 +112,13 @@ public class MyService implements IService, InitializingBean, IHandle<MyModel> {
                 continue;
             }
             Gson gson = new Gson();
-            OperationBranchLogModel destModel = destMap.get(module);
+            OperationBranchLog destModel = destMap.get(module);
             JsonElement jsonElement = new JsonParser().parse(destModel.getContent());
             //判断是否是数组
             if (!jsonElement.isJsonArray()) {
                 IModel dest = (IModel) gson.fromJson(destModel.getContent(), clazz);
                 String moduleName = dest.getClass().getDeclaredAnnotation(Name.class).value();
-                OperationBranchLogModel srcModel = srcMap.get(module);
+                OperationBranchLog srcModel = srcMap.get(module);
                 if (srcModel == null) {
                     ModuleLog moduleLog = new ModuleLog();
                     moduleLog.setType(OperationType.ADD);
@@ -140,7 +140,7 @@ public class MyService implements IService, InitializingBean, IHandle<MyModel> {
                 result.add(moduleLog);
             } else {
                 List<CommonLog> allLogs = new ArrayList<>();
-                OperationBranchLogModel srcModel = srcMap.get(module);
+                OperationBranchLog srcModel = srcMap.get(module);
                 List<Object> dest = gson.fromJson(destModel.getContent(), getListType(clazz));
                 List<Object> src = gson.fromJson(srcModel.getContent(), getListType(clazz));
                 if (CollectionUtils.isEmpty(src)) {
@@ -186,7 +186,7 @@ public class MyService implements IService, InitializingBean, IHandle<MyModel> {
                 continue;
             }
             Gson gson = new Gson();
-            OperationBranchLogModel srcModel = destMap.get(name);
+            OperationBranchLog srcModel = destMap.get(name);
             JsonElement jsonElement = new JsonParser().parse(srcModel.getContent());
             if (!jsonElement.isJsonArray()) {
                 IModel model = (IModel) gson.fromJson(srcModel.getContent(), clazz);
@@ -206,7 +206,7 @@ public class MyService implements IService, InitializingBean, IHandle<MyModel> {
     }
 
 
-    private List<CommonLog> batchLogs(Class clazz, OperationBranchLogModel myModel, OperationType type) {
+    private List<CommonLog> batchLogs(Class clazz, OperationBranchLog myModel, OperationType type) {
         Gson gson = new Gson();
         Field field = getRelationField(clazz);
         Relation relation = field.getDeclaredAnnotation(Relation.class);

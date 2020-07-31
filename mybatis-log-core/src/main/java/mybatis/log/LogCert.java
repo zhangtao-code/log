@@ -9,7 +9,7 @@ public class LogCert {
 
     private boolean auto;
 
-    private String tag;
+    private String branchName;
 
     private LogCert() {
     }
@@ -17,7 +17,7 @@ public class LogCert {
     public LogCert(Log log, String tag) {
         this.cert = true;
         this.auto = log.auto();
-        this.tag = tag;
+        this.branchName = tag;
     }
 
     public boolean isCert() {
@@ -36,11 +36,11 @@ public class LogCert {
         this.auto = auto;
     }
 
-    public String getTag() {
-        return tag;
+    public String getBranchName() {
+        return branchName;
     }
 
-    public void setTag(String tag) {
-        this.tag = tag;
+    public void setBranchName(String branchName) {
+        this.branchName = branchName;
     }
 }

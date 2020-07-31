@@ -1,21 +1,19 @@
 package org.github.mybatis.spring.mapper;
 
 import org.apache.ibatis.annotations.Param;
-import org.github.mybatis.spring.model.OperationBranchLogModel;
-import org.github.mybatis.spring.model.OperationTrunkLogModel;
+import org.github.mybatis.spring.model.OperationBranchLog;
+import org.github.mybatis.spring.model.OperationTrunkLog;
 
 import java.util.List;
 import java.util.Set;
 
 public interface OperationLogMapper {
 
-    void addTrunk(OperationTrunkLogModel model);
+    void addTrunk(OperationTrunkLog model);
 
-    void addBranch(@Param("list") List<OperationBranchLogModel> list);
+    void addBranch(@Param("list") List<OperationBranchLog> list);
 
-    long getTransactionalId();
+    List<OperationTrunkLog> getTrunk(String trunk, long primaryId);
 
-    List<OperationTrunkLogModel> getTrunk(String trunk, long primaryId);
-
-    List<OperationBranchLogModel> getBranch(@Param("set") Set<Long> set);
+    List<OperationBranchLog> getBranch(@Param("set") Set<Long> set);
 }
