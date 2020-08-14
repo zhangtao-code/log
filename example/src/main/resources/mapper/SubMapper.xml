@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="springexample.demo.mapper.SubMapper">
+    <!--构造方法开始-->
+    <!--键值映射-->
+    <resultMap id="allMap" type="sub">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="modelId" column="model_id"/>
+        <result property="subId" column="sub_id"/>
+    </resultMap>
+
+
+    <sql id="tableName">
+     `subModel`
+    </sql>
+
+
+    <!--基础sql-->
+    <sql id="columnSql">
+    `id`,`name`,`model_id`,`sub_id`
+    </sql>
+    <update id="saveAndDelete">
+        delete from <include refid="tableName"/>
+        where `model_id`=#{masterId}
+        and `sub_id`;
+        insert into <include refid="tableName"/>
+        (`name`,`model_id`,`sub_id`)
+        values
+        <foreach collection="list" item="item" separator=",">
+            (#{item.name},#{item.modelId},#{item.subId})
+        </foreach>
+    </update>
+    <select id="query4Log" resultMap="allMap">
+        select <include refid="columnSql"/>
+        from <include refid="tableName"/>
+        where `model_id`=#{masterId}
+    </select>
+
+</mapper>

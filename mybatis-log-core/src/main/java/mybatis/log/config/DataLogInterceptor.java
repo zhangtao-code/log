@@ -3,12 +3,13 @@ package mybatis.log.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.internal.Primitives;
 import mybatis.log.IModel;
 import mybatis.log.LogCert;
-import mybatis.log.TraceLocal;
 import mybatis.log.anno.Log;
 import mybatis.log.common.JsonExclude;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.ibatis.executor.Executor;
 import org.apache.ibatis.mapping.MappedStatement;
@@ -20,18 +21,22 @@ import org.apache.ibatis.session.RowBounds;
 import org.apache.ibatis.type.Alias;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 
 public abstract class DataLogInterceptor implements Interceptor {
     private Map<String, LogCert> interceptorMap = new ConcurrentHashMap<>();
-    private String name = ".query4Log";
+    private String name = "query4Log";
+    private Map<String, Boolean> hasMany = new HashMap<>();
+
 
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
         Object result = invocation.proceed();
-        String traceId = TraceLocal.get();
+        String traceId = getTraceId();
         if (StringUtils.isEmpty(traceId)) {
             return result;
         }
@@ -53,13 +58,7 @@ public abstract class DataLogInterceptor implements Interceptor {
         if (primaryId == null) {
             return result;
         }
-        if (!logCert.isAuto()) {
-            MappedStatement query = ms.getConfiguration().getMappedStatement(mapperName + name);
-            if (query == null) {
-                return result;
-            }
-            log = executor.query(query, primaryId, RowBounds.DEFAULT, null);
-        }
+
         String json = parseLog(log, primaryId, logCert, mapperName, ms.getConfiguration(), executor);
         if (StringUtils.isNotBlank(json)) {
             insertLog(json, logCert.getBranchName(), ms.getConfiguration(), executor, primaryId, traceId);
@@ -77,13 +76,58 @@ public abstract class DataLogInterceptor implements Interceptor {
 
     }
 
+    protected Object formatLog(Object object, String clazzName, String method) throws Exception {
+        if (object == null) {
+            return null;
+        }
+        if (object instanceof List || object.getClass().isArray()) {
+            Boolean has = hasMany.get(clazzName + method);
+            if (has != null) {
+                if (has) {
+                    return object;
+                } else {
+                    if (object instanceof List) {
+                        List list = ((List) object);
+                        if (CollectionUtils.isEmpty(list)) {
+                            return Collections.EMPTY_LIST;
+                        }
+                        return list.get(0);
+                    }
+                    if (object.getClass().isArray()) {
+                        Object[] array = (Object[]) object;
+                        if (ArrayUtils.isEmpty(array)) {
+                            return new Object[0];
+                        } else {
+                            return array[0];
+                        }
+                    }
+                }
+            } else {
+                Class clazz = Class.forName(clazzName);
+                for (Type type : clazz.getGenericInterfaces()) {
+                    Type returnType = ((ParameterizedType) type).getActualTypeArguments()[0];
+                    if (returnType instanceof Class) {
+                        hasMany.put(clazzName + method, false);
+                    } else {
+                        hasMany.put(clazzName + method, true);
+                    }
+                    return formatLog(object, clazzName, method);
+                }
+            }
+        }
+        return object;
+    }
+
     protected String parseLog(Object log, long primaryId, LogCert filter, String mapperName, Configuration configuration, Executor executor) throws Exception {
         if (!filter.isAuto()) {
-            MappedStatement query = configuration.getMappedStatement(mapperName + name);
+            MappedStatement query = configuration.getMappedStatement(mapperName + "." + name);
             if (query == null) {
                 return null;
             }
-            log = executor.query(query, primaryId, RowBounds.DEFAULT, null);
+            Map<String, Object> map = new HashMap<>();
+            map.put("masterId", primaryId);
+            log = executor.query(query, map, RowBounds.DEFAULT, null);
+            log = formatLog(log, mapperName, name);
         }
         return toJson(log);
     }
@@ -129,6 +173,9 @@ public abstract class DataLogInterceptor implements Interceptor {
         if (object instanceof Map) {
             Map map = (Map) object;
             return handleCollection(map.values());
+        }
+        if ((object instanceof String) || Primitives.isPrimitive(object.getClass()) || Primitives.isWrapperType(object.getClass())) {
+            return null;
         }
         if (object instanceof IModel) {
             IModel model = (IModel) object;
@@ -181,4 +228,13 @@ public abstract class DataLogInterceptor implements Interceptor {
         return alias.value();
     }
 
+    protected abstract String getTraceId();
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
 }

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="springexample.demo.mapper.TrunkMapper">
+    <resultMap id="trunk" type="mybatis.log.model.OperationTrunkLog">
+        <id property="id" column="id"/>
+        <result property="primaryId" column="primary_id"/>
+        <result property="tagId" column="tag_id"/>
+        <result property="trunk" column="trunk"/>
+        <result property="operationType" column="operation_type"/>
+        <result property="operatorId" column="operator_id"/>
+        <result property="operatingTime" column="operating_time"/>
+    </resultMap>
+
+    <sql id="trunkColumn">
+         `id`,`primary_id`,`tag_id`,`trunk`,`operation_type`,`operator_id`,`operating_time`
+    </sql>
+    <sql id="branchColumn">
+         `id`,`parent_id`,`branch`,`content`
+    </sql>
+    <insert id="addTrunk">
+        INSERT  INTO `operation_trunk_log`
+        (`primary_id`,`tag_id`,`trunk`,`operation_type`,`operator_id`)
+        VALUES
+        (#{primaryId},#{tagId},#{trunk},#{operationType},#{operatorId})
+    </insert>
+    <select id="getTrunk" resultMap="trunk">
+        SELECT <include refid="trunkColumn"/>
+        FROM
+        `operation_trunk_log`
+        WHERE
+        `primary_id`=#{primaryId}
+        AND
+        `trunk`=#{trunk}
+        ORDER BY operating_time DESC
+    </select>
+
+</mapper>
